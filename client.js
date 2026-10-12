@@ -139,6 +139,15 @@ window.__ModuleLoader__.load({
       return json.value
     }
 
+    /** 把浏览器半身的加载情况回报给宿主（写进 boot.log），用于排查面板没出现的问题。 */
+    function report(event, extra) {
+      try {
+        void rpc('debug', { event, ...(extra ?? {}) }).catch(() => {})
+      } catch {
+        /* 上报失败无所谓，绝不影响主流程 */
+      }
+    }
+
     /* ---------------------------------------------------------------- *
      * 面板
      * ---------------------------------------------------------------- */
@@ -381,10 +390,18 @@ window.__ModuleLoader__.load({
      * ---------------------------------------------------------------- */
 
     function apply(ctx) {
+      report('client/apply', {
+        hasSlots: ctx?.slots != null,
+        hasInject: typeof ctx?.inject === 'function'
+      })
+
       // 先看看是不是已经注册过（热重载时可能重复执行）
       try {
         const existing = ctx.slots?.entries?.(TAB_ID)
-        if (Array.isArray(existing) && existing.length > 0) return
+        if (Array.isArray(existing) && existing.length > 0) {
+          report('client/already-registered')
+          return
+        }
       } catch {
         /* 读不到就继续注册 */
       }
@@ -400,6 +417,9 @@ window.__ModuleLoader__.load({
         /* 没有国际化服务就用中文兜底 */
       }
 
+      /** 有没有真正把标签页注册上 —— 4 秒后还没成，就说明服务没出现。 */
+      let registered = false
+
       ctx.inject(['sidebarRightTabs'], (inner) => {
         const cleanups = []
         const push = (fn) => {
@@ -407,7 +427,10 @@ window.__ModuleLoader__.load({
         }
         try {
           const tabs = inner.sidebarRightTabs
-          if (!tabs || typeof tabs.register !== 'function') return
+          if (!tabs || typeof tabs.register !== 'function') {
+            report('client/no-sidebar-service', { serviceType: typeof tabs })
+            return
+          }
           push(tabs.register({
             id: TAB_ID,
             kind: TAB_ID,
@@ -426,8 +449,10 @@ window.__ModuleLoader__.load({
             { name: 'sidebar.right.pane.tab.title', key: TAB_ID },
             () => h('span', null, translate('tab.label'))
           )))
-        } catch {
-          /* 面板注册失败不该影响 DSH 本身 */
+          registered = true
+          report('client/tab-registered', { id: TAB_ID, cleanups: cleanups.length })
+        } catch (error) {
+          report('client/register-failed', { reason: String(error) })
         }
         return () => {
           for (const fn of cleanups.splice(0)) {
@@ -439,6 +464,14 @@ window.__ModuleLoader__.load({
           }
         }
       })
+
+      // sidebarRightTabs 若始终不出现，这个 inject 回调根本不会触发，
+      // 面板就会"凭空消失"。留一条记录，免得下次再靠猜。
+      setTimeout(() => {
+        if (!registered) {
+          report('client/sidebar-service-missing', { hasSlots: ctx?.slots != null })
+        }
+      }, 4000)
     }
 
     t.exports = {

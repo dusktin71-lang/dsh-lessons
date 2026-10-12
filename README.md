@@ -71,6 +71,7 @@ DSH 右侧栏 →「AI 教训」：
 | --- | --- |
 | 插件源码 | `<本目录>`（通过目录联接挂在 profile 下，改这里就是改生效代码） |
 | 数据文件 | `~/.dsh/ai-lessons/state.json` |
+| 自检日志 | `~/.dsh/ai-lessons/boot.log`（每次启动追加一行，用于排查加载问题） |
 
 ---
 
@@ -127,6 +128,24 @@ window.__ModuleLoader__.load({ id: 'dsh-ai-lessons', factory: (req) => { … } }
 
 面板通过 `ctx.inject(['sidebarRightTabs'], …)` + `ctx.slots.register('sidebar.right.pane.tab', …)` 挂到右侧栏，数据和操作走上面那个本地接口。
 
+**注意**：`sidebarRightTabs` 由 `@deepseek-ai/dsh-client-ui-sidebar-right` 提供，想让这个服务在浏览器侧存在，必须在 `package.json` 里声明：
+
+```json
+"dsh": {
+  "client": {
+    "platform": "web",
+    "inject": [
+      "@deepseek-ai/dsh-client-connection",
+      "@deepseek-ai/dsh-client-locale",
+      "@deepseek-ai/dsh-client-ui-sidebar-right",
+      "@deepseek-ai/dsh-api-remotes"
+    ]
+  }
+}
+```
+
+`inject` 为空时插件不会报错，但服务永远不出现，`ctx.inject(['sidebarRightTabs'], …)` 的回调也就永远不会执行 —— 表现就是「右侧栏里找不到这个标签页」。
+
 ---
 
 ## 可调项
@@ -142,3 +161,33 @@ window.__ModuleLoader__.load({ id: 'dsh-ai-lessons', factory: (req) => { … } }
 | `maxLessonChars` | `240` | 单条注入的字符上限 |
 | `defaultSessionEnabled` | `true` | 新对话默认是否生效 |
 | `includeSubagents` | `false` | 预留：是否注入子智能体 |
+
+---
+
+## 排查：右侧栏没有「AI 教训」标签页
+
+两个半身是**独立加载**的：宿主半身跑在 Node 侧，浏览器半身由 DSH 的 web app 单独加载。面板不出现时，先看自检日志：
+
+```bash
+tail -20 ~/.dsh/ai-lessons/boot.log
+```
+
+日志每行一个 JSON，看 `event` 字段：
+
+| event | 含义 |
+| --- | --- |
+| `apply` | 宿主半身被加载了。**没有这一行 → 插件根本没起来**（检查 profile 的 `package.json` 里 `dsh.profile.bundles` 有没有登记） |
+| `section` | 系统提示词注入的注册结果，`ok:false` 时看 `reason` |
+| `route` | 面板所用 HTTP 接口的注册结果 |
+| `client-report` | 浏览器半身的上报，具体看它里面的 `payload.event` |
+
+`client-report` 的 `payload.event` 取值：
+
+| 值 | 含义 | 怎么办 |
+| --- | --- | --- |
+| `client/apply` | 浏览器半身开始执行 | 说明它被加载了 |
+| `client/tab-registered` | 标签页注册成功 | 面板应当已出现在右侧栏 |
+| `client/sidebar-service-missing` | 4 秒内始终没拿到 `sidebarRightTabs` | `dsh.client.inject` 里缺少 `@deepseek-ai/dsh-client-ui-sidebar-right` |
+| `client/register-failed` | 注册时抛错 | 看 `reason` |
+
+最常见的坑：`dsh.client.inject` 为空**不会报任何错**，只会让 `sidebarRightTabs` 永远不出现，于是 `ctx.inject(['sidebarRightTabs'], …)` 的回调永不执行 —— 表现就是「右侧栏里找不到这个标签页」。改完 `package.json` 必须**重启 DSH**。

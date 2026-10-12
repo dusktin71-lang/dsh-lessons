@@ -34,6 +34,7 @@ export const inject = []
 
 const DATA_DIR_NAME = 'ai-lessons'
 const STATE_FILE_NAME = 'state.json'
+const BOOT_LOG_FILE_NAME = 'boot.log'
 const SECTION_NAME = 'dsh-ai-lessons:lessons'
 const API_PATH = '/api/dsh-ai-lessons/rpc'
 const SAVE_DEBOUNCE_MS = 400
@@ -148,6 +149,36 @@ function oneLine(text) {
 export function apply(ctx, config = {}) {
   const dataDir = resolveDataDir(ctx)
   const statePath = path.join(dataDir, STATE_FILE_NAME)
+  const bootLogPath = path.join(dataDir, BOOT_LOG_FILE_NAME)
+
+  /**
+   * 启动自检日志。GUI 模式下拿不到 DSH 的宿主 stdout，这里自己留一份，
+   * 用来确认「插件有没有被加载」「哪些能力没接上」。
+   * 只追加，超过 64KB 就清空重来，不会无限膨胀。
+   */
+  function logBoot(fields) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true })
+      if (fs.existsSync(bootLogPath) && fs.statSync(bootLogPath).size > 64 * 1024) {
+        fs.writeFileSync(bootLogPath, '', 'utf8')
+      }
+      fs.appendFileSync(
+        bootLogPath,
+        JSON.stringify({ ts: new Date().toISOString(), pid: process.pid, ...fields }) + '\n',
+        'utf8'
+      )
+    } catch {
+      /* 自检日志出问题不影响插件本身 */
+    }
+  }
+
+  let harnessVersion = 'unknown'
+  try {
+    harnessVersion = ctx.get?.('harnessVersion') ?? ctx.get?.('version') ?? 'unknown'
+  } catch {
+    /* 拿不到就算了 */
+  }
+  logBoot({ event: 'apply', dataDir, harnessVersion, hasStateFile: fs.existsSync(statePath) })
 
   /** @type {State} */
   let state = loadState(statePath)
@@ -346,7 +377,10 @@ export function apply(ctx, config = {}) {
   ctx.inject(['systemPrompt'], (inner) => {
     try {
       const systemPrompt = inner.systemPrompt
-      if (systemPrompt == null || typeof systemPrompt.section !== 'function') return
+      if (systemPrompt == null || typeof systemPrompt.section !== 'function') {
+        logBoot({ event: 'section', ok: false, reason: 'systemPrompt.section 不可用' })
+        return
+      }
       const anchor = typeof systemPrompt.getSectionOrder === 'function'
         ? systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX')
         : undefined
@@ -358,8 +392,10 @@ export function apply(ctx, config = {}) {
         text: () => renderInjection(lastSessionId),
         interpolate: false
       })
+      logBoot({ event: 'section', ok: true, name: SECTION_NAME, order, anchor: anchor ?? null })
       ctx.logger?.info?.('dsh-ai-lessons: 系统提示词注入已就绪')
     } catch (error) {
+      logBoot({ event: 'section', ok: false, reason: String(error) })
       ctx.logger?.warn?.(`dsh-ai-lessons: 注入失败 ${String(error)}`)
     }
   })
@@ -370,7 +406,10 @@ export function apply(ctx, config = {}) {
     try {
       const connection = inner.get('connection')
       const register = connection?.fetch?.register
-      if (typeof register !== 'function') return
+      if (typeof register !== 'function') {
+        logBoot({ event: 'route', ok: false, reason: 'connection.fetch.register 不可用' })
+        return
+      }
       inner.effect(() => register({
         path: API_PATH,
         methods: ['POST'],
@@ -389,8 +428,10 @@ export function apply(ctx, config = {}) {
           })
         }
       }), 'dsh-ai-lessons: rpc route')
+      logBoot({ event: 'route', ok: true, path: API_PATH })
       ctx.logger?.info?.(`dsh-ai-lessons: 已挂载 ${API_PATH}`)
     } catch (error) {
+      logBoot({ event: 'route', ok: false, reason: String(error) })
       ctx.logger?.warn?.(`dsh-ai-lessons: 接口挂载失败 ${String(error)}`)
     }
   })
@@ -459,6 +500,11 @@ export function apply(ctx, config = {}) {
 
         case 'preview':
           return ok({ preview: renderInjection(currentSession) })
+
+        // 浏览器半身上报自己的加载情况 —— 面板没出现时用来定位问题。
+        case 'debug':
+          logBoot({ event: 'client-report', payload: body ?? {} })
+          return ok({ logged: true })
 
         default:
           return fail(`未知操作：${op}`)
