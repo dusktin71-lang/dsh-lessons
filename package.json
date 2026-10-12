@@ -1,0 +1,34 @@
+{
+  "name": "dsh-ai-lessons",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "记录 AI 的“愚蠢时刻”（被用户纠正、答非所问、工具报错等），把教训沉淀成可管理的清单，并在后续每一次对话中自动注入系统提示词，让本地模型不再重复犯同样的错。",
+  "icon": "icon.svg",
+  "license": "MIT",
+  "main": "index.js",
+  "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "lessons", "self-improve"],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}
