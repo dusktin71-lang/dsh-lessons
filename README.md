@@ -4,6 +4,8 @@
 
 命中一句话就能概括：**记录犯过的错 → 沉淀成清单 → 下次开口前先看一眼。**
 
+仓库：<https://github.com/dusktin71-lang/dsh-lessons> · License: MIT
+
 ---
 
 ## 它做了什么
@@ -75,6 +77,8 @@ DSH 右侧栏 →「AI 教训」：
 ## 安装 / 卸载
 
 ```bash
+git clone https://github.com/dusktin71-lang/dsh-lessons.git
+cd dsh-lessons
 node install.mjs              # 安装（会备份 profile/package.json）
 node install.mjs --no-install # 只改配置，不建链接
 node verify-install.mjs       # 校验安装结果
