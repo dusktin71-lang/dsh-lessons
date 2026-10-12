@@ -153,6 +153,14 @@ await callRpc({ op: 'delete', id: added.lesson.id })
 assert.equal((await callRpc({ op: 'state' })).lessons.length, 2)
 console.log('ok   RPC delete 正常')
 
+// 首次自动展开右栏的标记：默认未展开；回报后置位且不再重复。
+assert.equal(stateAfter.panelAutoOpened, false, '默认应未自动展开过')
+assert.equal(stateAfter.config.autoOpenPanel, true, '默认应允许自动展开一次')
+const marked = await callRpc({ op: 'markPanelOpened' })
+assert.equal(marked.panelAutoOpened, true)
+assert.equal((await callRpc({ op: 'state' })).panelAutoOpened, true, '标记应持久化在状态里')
+console.log('ok   自动展开标记（markPanelOpened）正常')
+
 /* ---------------- 落盘 ---------------- */
 
 for (const dispose of disposers.splice(0)) {

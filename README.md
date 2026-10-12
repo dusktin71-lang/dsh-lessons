@@ -63,6 +63,18 @@ DSH 右侧栏 →「AI 教训」：
 - **注入预览**：模型实际会读到的原文
 - **更多设置**：注入条数上限、单条字符上限、新对话默认是否生效、清空全部
 
+**在哪找、怎么打开。** 右侧栏是 DSH 里**一列可以折叠的面板**，宽度默认是 `0`，
+而且这个宽度会持久化 —— 也就是说，插件把标签页注册进去**并不会自动把那一列拉开**。
+DSH 的规则写在官方文档里：「面板展开，因为用户看不到的内容不算打开」。
+
+所以有两条路：
+
+1. **不用管**：插件首次加载后会自动展开右栏一次（`config.autoOpenPanel`，
+   只做一次，之后记在 `state.panelAutoOpened` 里，永不再打扰）。
+2. **自己开**：展开按钮在**会话标题栏最右端**（`conversation.session.header.corner`
+   席位），图标是一个分成左右两半的方块、右半带一条竖线 —— 就是左侧栏折叠图标的镜像。
+   收起后再点它就能拉回来。打开后若看到的是引导页，点其中的「AI 教训」入口即可。
+
 ---
 
 ## 文件位置
@@ -161,6 +173,7 @@ window.__ModuleLoader__.load({ id: 'dsh-ai-lessons', factory: (req) => { … } }
 | `maxLessonChars` | `240` | 单条注入的字符上限 |
 | `defaultSessionEnabled` | `true` | 新对话默认是否生效 |
 | `includeSubagents` | `false` | 预留：是否注入子智能体 |
+| `autoOpenPanel` | `true` | 首次加载后自动展开右栏一次（只做一次，标记记在 `state.panelAutoOpened`） |
 
 ---
 
@@ -186,8 +199,13 @@ tail -20 ~/.dsh/ai-lessons/boot.log
 | 值 | 含义 | 怎么办 |
 | --- | --- | --- |
 | `client/apply` | 浏览器半身开始执行 | 说明它被加载了 |
-| `client/tab-registered` | 标签页注册成功 | 面板应当已出现在右侧栏 |
+| `client/tab-registered` | 标签页注册成功 | 面板已进右侧栏的标签仓库 |
 | `client/sidebar-service-missing` | 4 秒内始终没拿到 `sidebarRightTabs` | `dsh.client.inject` 里缺少 `@deepseek-ai/dsh-client-ui-sidebar-right` |
 | `client/register-failed` | 注册时抛错 | 看 `reason` |
+| `client/auto-opened` | 首次自动展开右栏成功 | 正常 |
+| `client/auto-open-skipped` | 重试若干次仍未展开 | 多半是当时没有挂载中的会话；手动点展开按钮即可 |
+
+**注册成功却看不到面板**，八成是右栏本身处于折叠态 —— 注册和展开是两件事，
+见上文「面板 → 在哪找、怎么打开」。
 
 最常见的坑：`dsh.client.inject` 为空**不会报任何错**，只会让 `sidebarRightTabs` 永远不出现，于是 `ctx.inject(['sidebarRightTabs'], …)` 的回调永不执行 —— 表现就是「右侧栏里找不到这个标签页」。改完 `package.json` 必须**重启 DSH**。

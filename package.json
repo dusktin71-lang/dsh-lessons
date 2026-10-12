@@ -1,6 +1,6 @@
 {
   "name": "dsh-ai-lessons",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "记录 AI 的“愚蠢时刻”（被用户纠正、答非所问、工具报错等），把教训沉淀成可管理的清单，并在后续每一次对话中自动注入系统提示词，让本地模型不再重复犯同样的错。",

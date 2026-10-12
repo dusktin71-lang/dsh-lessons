@@ -53,7 +53,14 @@ const DEFAULT_CONFIG = {
   /** 新会话默认是否在生效范围内。 */
   defaultSessionEnabled: true,
   /** 注入到子智能体（subagent）的请求里。 */
-  includeSubagents: false
+  includeSubagents: false,
+  /**
+   * 首次加载后自动把右侧栏展开一次。
+   * DSH 的右列宽度默认是 0（收起）且会持久化 —— 插件注册 tab 并不会
+   * 把它拉开，所以不主动展开一次的话，用户根本不知道面板在哪。
+   * 只做一次（见 state.panelAutoOpened），之后完全交给用户。
+   */
+  autoOpenPanel: true
 }
 
 /**
@@ -446,6 +453,7 @@ export function apply(ctx, config = {}) {
             stats: state.stats,
             currentSessionId: currentSession,
             currentSessionEnabled: sessionEnabled(currentSession),
+            panelAutoOpened: state.panelAutoOpened === true,
             preview: renderInjection(currentSession)
           })
 
@@ -501,6 +509,12 @@ export function apply(ctx, config = {}) {
         case 'preview':
           return ok({ preview: renderInjection(currentSession) })
 
+        // 浏览器半身首次自动展开右栏成功后回报，免得以后每次启动都强行展开。
+        case 'markPanelOpened':
+          state.panelAutoOpened = true
+          scheduleSave()
+          return ok({ panelAutoOpened: true })
+
         // 浏览器半身上报自己的加载情况 —— 面板没出现时用来定位问题。
         case 'debug':
           logBoot({ event: 'client-report', payload: body ?? {} })
@@ -546,6 +560,7 @@ function loadState(statePath) {
     config: { ...DEFAULT_CONFIG },
     lessons: [],
     sessionOverrides: {},
+    panelAutoOpened: false,
     stats: { totalRecorded: 0 }
   }
   try {
@@ -557,6 +572,7 @@ function loadState(statePath) {
       config: { ...DEFAULT_CONFIG, ...(parsed.config ?? {}) },
       lessons: Array.isArray(parsed.lessons) ? parsed.lessons.filter((item) => item != null && typeof item === 'object') : [],
       sessionOverrides: parsed.sessionOverrides != null && typeof parsed.sessionOverrides === 'object' ? parsed.sessionOverrides : {},
+      panelAutoOpened: parsed.panelAutoOpened === true,
       stats: parsed.stats != null && typeof parsed.stats === 'object' ? parsed.stats : { totalRecorded: 0 }
     }
   } catch {

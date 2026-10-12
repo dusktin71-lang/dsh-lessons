@@ -26,6 +26,9 @@ window.__ModuleLoader__.load({
       primitives = null
     }
 
+    /** 引导页入口的配图：官方类型的 guide 条目都带一个，缺了会显得突兀。 */
+    const GUIDE_ICON = primitives?.GuideArtworkFiles ?? primitives?.GuideArtworkBrowser ?? null
+
     const NS = 'dsh-ai-lessons'
     const API = '/api/dsh-ai-lessons/rpc'
     const TAB_ID = 'dsh-ai-lessons'
@@ -368,6 +371,9 @@ window.__ModuleLoader__.load({
             }, cfg.defaultSessionEnabled ? '是' : '否')
           ),
           h('div', { style: { marginTop: 12, ...S.muted } },
+            '这个面板住在「右侧栏」。收起之后，点会话标题栏最右端那个方块图标（左右两半、右半带一条竖线）就能把它再拉出来。'
+          ),
+          h('div', { style: { marginTop: 12, ...S.muted } },
             '数据文件：~/.dsh/ai-lessons/state.json',
             h('br'),
             '也可以直接在对话里说：/lessons off、/lessons on、记一下：……'
@@ -417,6 +423,64 @@ window.__ModuleLoader__.load({
         /* 没有国际化服务就用中文兜底 */
       }
 
+      /**
+       * DSH 的右侧栏是「一列可折叠的面板」，宽度默认 0 且会持久化。
+       * 插件只注册 tab 并不会把这一列拉开 —— 用户会以为面板压根没做出来。
+       * 所以首次安装后主动展开一次，成功即回报宿主，之后再不做这件事。
+       */
+      function autoOpenPanel(scope) {
+        let done = false
+        let attempts = 0
+        let lastError = ''
+        const MAX_ATTEMPTS = 12
+
+        const resolveController = () => {
+          try {
+            const fromScope = typeof scope?.get === 'function' ? scope.get('sidebarRight') : null
+            if (fromScope != null) return fromScope
+          } catch {
+            /* 落到 ctx 上再取一次 */
+          }
+          try {
+            return typeof ctx.get === 'function' ? ctx.get('sidebarRight') : null
+          } catch {
+            return null
+          }
+        }
+
+        const tick = async () => {
+          if (done) return
+          attempts += 1
+          try {
+            const snapshot = await rpc('state')
+            if (snapshot?.panelAutoOpened === true) {
+              done = true
+              return
+            }
+            if (snapshot?.config?.autoOpenPanel === false) {
+              done = true
+              return
+            }
+            const controller = resolveController()
+            if (controller != null && typeof controller.openTab === 'function') {
+              // openTab 会顺带展开这一列（DSH 的规则：看不到的内容不算打开）。
+              // 没有挂载中的会话时它会 throw，那就等下一轮。
+              controller.openTab(TAB_ID)
+              done = true
+              report('client/auto-opened', { attempts })
+              void rpc('markPanelOpened').catch(() => {})
+              return
+            }
+          } catch (error) {
+            lastError = String(error?.message ?? error)
+          }
+          if (attempts < MAX_ATTEMPTS) setTimeout(tick, 1500)
+          else report('client/auto-open-skipped', { attempts, reason: lastError })
+        }
+
+        setTimeout(tick, 1500)
+      }
+
       /** 有没有真正把标签页注册上 —— 4 秒后还没成，就说明服务没出现。 */
       let registered = false
 
@@ -438,7 +502,8 @@ window.__ModuleLoader__.load({
             guide: [{
               order: 25,
               title: () => translate('tab.label'),
-              description: () => translate('guide.desc')
+              description: () => translate('guide.desc'),
+              ...(GUIDE_ICON === null ? {} : { icon: GUIDE_ICON })
             }]
           }))
           push(inner.slots.inject('sidebar.right.pane.tab', () => inner.slots.register(
@@ -451,6 +516,7 @@ window.__ModuleLoader__.load({
           )))
           registered = true
           report('client/tab-registered', { id: TAB_ID, cleanups: cleanups.length })
+          autoOpenPanel(inner)
         } catch (error) {
           report('client/register-failed', { reason: String(error) })
         }
